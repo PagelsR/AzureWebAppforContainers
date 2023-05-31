@@ -77,7 +77,7 @@ jobs:
       uses: azure/arm-deploy@v1
       continue-on-error: false
       with:
-        scope: resource-group
+        scope: resourcegroup
         resourceGroupName: ${{ env.Azure_Resource_GroupName }}
         template: ./IaC/main-1.bicep
         deploymentMode: Incremental
