@@ -1,0 +1,180 @@
+name: BuildDeploy ContainerApp NoACR
+on:
+  # push:
+  #   branches:
+  #     - master
+
+  # Allow mannually trigger 
+  workflow_dispatch: 
+  
+env:
+  DOCKERFILEPATH: "Application/AspNetWebApp.Web"
+  
+  dotnet_version: '7.x.x'
+  Azure_Resource_GroupName: 'rg-AzureWebAppforContainerApps'
+  Azure_Resource_GroupLocation: 'eastus2'
+  CONFIGURATION: Release
+  WORKING_DIRECTORY: .
+  AZURE_CREDENTIALS_MCAPS: ${{ secrets.AZURE_CREDENTIALS_MCAPS }}
+  
+jobs:
+
+  ################################################################
+  # Stage: Deploy Infrastructure
+  ################################################################  
+  deploy_infrastructure:
+    runs-on: ubuntu-latest
+    outputs:
+      output_webSiteName: ${{ steps.Infra.outputs.out_webSiteName }}
+      output_keyvaultName: ${{ steps.Infra.outputs.out_keyvaultName }}
+      output_containerregistryName: ${{ steps.Infra.outputs.out_containerregistryName }}
+      output_containerAppName: ${{ steps.Infra.outputs.out_containerAppName }}
+      output_containerName: ${{ steps.Infra.outputs.out_containerName }}
+      output_containerAppEnvName: ${{ steps.Infra.outputs.out_containerAppEnvName }}
+      output_containerAppFQDN: ${{ steps.Infra.outputs.out_containerAppFQDN }}
+
+    name: Deploy Infrastructure
+    steps:
+    - uses: actions/checkout@master
+
+    - name: Azure authentication
+      uses: azure/login@v1
+      with:
+        creds: ${{ env.AZURE_CREDENTIALS_MCAPS }}
+
+    # Check if Resource Group Exists
+    - name: Ensure Resource Group Exists
+      uses: Azure/CLI@v1
+      continue-on-error: true
+      with:
+        inlineScript: |
+          #!/bin/bash
+          az group create --name ${{ env.Azure_Resource_GroupName }} --location ${{ env.Azure_Resource_GroupLocation }}
+
+    # Unlock Resource Group
+    - name: Ensure Resource Group is UnLocked
+      uses: Azure/CLI@v1
+      continue-on-error: true
+      with:
+        inlineScript: |
+          az group lock delete --name DontDeleteMe --resource-group ${{ env.Azure_Resource_GroupName }}
+
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    # - name: Set short git commit SHA
+    #   id: vars
+    #   run: |
+    #     calculatedSha=$(git rev-parse --short ${{ github.sha }})
+    #     echo "::set-output name=short_sha::$calculatedSha"
+
+    # - name: Confirm git commit SHA output
+    #   run: echo ${{ steps.vars.outputs.short_sha }}
+
+      # Deploy ARM Template using Bicep DSL
+    - name: Infrastructure Deploy
+      id: Infra
+      uses: azure/arm-deploy@v1
+      continue-on-error: false
+      with:
+        resourceGroupName: ${{ env.Azure_Resource_GroupName }}
+        template: ./IaC/main-1.bicep
+        #parameters: ./IaC/main-1.params.json ContainerRevisionSuffix=${{ steps.vars.outputs.short_sha }}
+        failOnStdErr: false
+
+    # Lock Resource Group
+    - name: Ensure Resource Group is Locked
+      uses: Azure/CLI@v1
+      continue-on-error: true
+      with:
+        inlineScript: |
+          az group lock create --lock-type CanNotDelete --name DontDeleteMe --resource-group ${{ env.Azure_Resource_GroupName }} --notes 'Prevent deletion of the resource group'
+
+    - name: DEBUG ONLY Display Output Variables
+      run: |
+         echo 'output_webSiteName: ${{ steps.Infra.outputs.out_webSiteName }}'
+         echo 'output_keyvaultName: ${{ steps.Infra.outputs.out_keyvaultName }}'
+         echo 'output_containerName: ${{ steps.Infra.outputs.out_containerName }}'
+         echo 'output_containerAppFQDN: ${{ steps.Infra.outputs.out_containerAppFQDN }}'
+
+  ################################################################
+  # Stage: Build and deploy to Container Apps
+  ################################################################            
+  build_deploy_to_containerapp:
+    name: Build > Deploy > Container App
+    needs: [deploy_infrastructure]
+    environment:
+      name: 'Development-ContainerApps'
+      url: 'https://${{ needs.deploy_infrastructure.outputs.output_containerAppFQDN }}'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Azure authentication
+      uses: azure/login@v1
+      with:
+        creds: ${{ env.AZURE_CREDENTIALS_MCAPS }}
+
+    - name: 'Get Key Vault values'
+      id: GetKVACRValues
+      uses: Azure/CLI@v1
+      continue-on-error: true
+      with:
+        inlineScript: |
+          az config set extension.use_dynamic_install=yes_without_prompt
+          result=$(az keyvault secret show \
+                      --name "acrusername" \
+                      --vault-name "${{ needs.deploy_infrastructure.outputs.output_keyvaultName }}" \
+                      --query "value" --output tsv)
+          echo "::set-output name=acrusername::$result"
+          result=$(az keyvault secret show \
+            --name "acrpassword" \
+            --vault-name "${{ needs.deploy_infrastructure.outputs.output_keyvaultName }}" \
+            --query "value" --output tsv)
+          echo "::set-output name=acruserpassword::$result"
+
+    - name: DEBUG ONLY Display Output Variables
+      run: |
+         echo 'output_webSiteName: ${{ needs.deploy_infrastructure.outputs.out_webSiteName }}'
+         echo 'output_keyvaultName: ${{ needs.deploy_infrastructure.outputs.output_keyvaultName }}'
+         echo 'output_containerName: ${{ needs.deploy_infrastructure.outputs.output_containerName }}'
+         echo 'output_containerAppName: ${{ needs.deploy_infrastructure.outputs.output_containerAppName }}'
+         echo 'output_containerAppEnvName: ${{ needs.deploy_infrastructure.outputs.output_containerAppEnvName }}'
+         echo 'acrusername: ${{ steps.GetKVACRValues.outputs.acrusername }}'
+         echo 'acruserpassword: ${{ steps.GetKVACRValues.outputs.acruserpassword }}'
+         echo 'output_containerAppFQDN: ${{ needs.deploy_infrastructure.outputs.output_containerAppFQDN }}'
+
+    # Unlock Resource Group
+    - name: Ensure Resource Group is UnLocked
+      uses: Azure/CLI@v1
+      continue-on-error: true
+      with:
+        inlineScript: |
+          az group lock delete --name DontDeleteMe --resource-group ${{ env.Azure_Resource_GroupName }}
+
+    # PREVIEW - https://github.com/marketplace/actions/azure-container-apps-build-and-deploy
+    - name: Build and deploy Container App
+      uses: azure/container-apps-deploy-action@v0
+      with:
+        appSourcePath: ${{ github.workspace }}/Application/AspNetWebApp.Web
+        acrName: ${{ needs.deploy_infrastructure.outputs.output_containerregistryName }}
+        containerAppName: ${{ needs.deploy_infrastructure.outputs.output_containerAppName }}
+        resourceGroup: ${{ env.Azure_Resource_GroupName }}
+
+    # Lock Resource Group
+    - name: Ensure Resource Group is Locked
+      uses: Azure/CLI@v1
+      continue-on-error: true
+      with:
+        inlineScript: |
+          az group lock create --lock-type CanNotDelete --name DontDeleteMe --resource-group ${{ env.Azure_Resource_GroupName }} --notes 'Prevent deletion of the resource group'
+
+    # Logout of Azure and Clear the Cache
+    - name: Logout of Azure and Clear the Cache
+      uses: azure/CLI@v1
+      with:
+        inlineScript: |
+          az logout
+          az cache purge
+          az account clear    
