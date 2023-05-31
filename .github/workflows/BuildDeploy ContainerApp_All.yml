@@ -77,9 +77,10 @@ jobs:
       uses: azure/arm-deploy@v1
       continue-on-error: false
       with:
-        scope: Infrastructure
+        scope: resource-group
         resourceGroupName: ${{ env.Azure_Resource_GroupName }}
         template: ./IaC/main-1.bicep
+        deploymentMode: Incremental
         #parameters: ./IaC/main-1.params.json ContainerRevisionSuffix=${{ steps.vars.outputs.short_sha }}
         failOnStdErr: false
 
