@@ -41,16 +41,6 @@ param minReplicas int = 1
 @maxValue(25)
 param maxReplicas int = 3
 
-// resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
-//   name: containerAppLogAnalyticsName
-//   location: location
-//   properties: {
-//     sku: {
-//       name: 'PerGB2018'
-//     }
-//   }
-// }
-
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name: containerAppLogAnalyticsName
   location: location
