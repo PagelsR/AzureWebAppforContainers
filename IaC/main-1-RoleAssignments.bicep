@@ -7,7 +7,7 @@ param roleDefinitionId string = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 var secretUserRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleDefinitionId)
 
 // Reference Existing resource
-resource existing_ContainerApp 'Microsoft.App/containerApps@2022-10-01' existing = {
+resource existing_ContainerApp 'Microsoft.App/containerApps@2023-08-01-preview' existing = {
   name: containerAppName
 }
 
