@@ -112,8 +112,8 @@ module keyvaultmod './main-1-KeyVault.bicep' = {
 // ObjectId of alias RPagels
 param AzObjectIdEmailAlias string = '0aa95253-9e37-4af9-a63a-3b35ed78e98b'
 
-// Object Id of Service Principal "52a8e_ServicePrincipal_FullAccess"
-param ADOServiceprincipalObjectId string = '1681488b-a0ee-4491-a254-728fe9e43d8c'
+// Object Id of Service Principal "82f103_ServicePrincipal_FullAccess"
+param ADOServiceprincipalObjectId string = 'd4e7db24-2894-4524-a78a-af95bf664dda'
 
 // Create Configuration Entries
 module configsettingsmod './main-1-ConfigSettings.bicep' = {
